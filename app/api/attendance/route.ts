@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { list, append, update, remove, audit, findBy } from '@/lib/sheets/erpSheets';
 import { can, PermissionError } from '@/lib/permissions/can';
-import { requireSuperadminAuth } from '@/lib/auth/middleware';
+import { requireSuperadminOrTenant } from '@/lib/auth/middleware';
 
 export interface AttendanceRow {
   id: string;
@@ -33,9 +33,6 @@ function newId(): string {
  * Returns rows plus a tally, so the UI does not have to recount.
  */
 export async function GET(request: NextRequest) {
-  const denied = await requireSuperadminAuth(request);
-  if (denied) return denied;
-
   try {
     const sp = request.nextUrl.searchParams;
     const tenantId = sp.get('tenantId');
@@ -45,6 +42,9 @@ export async function GET(request: NextRequest) {
     if (!tenantId) {
       return NextResponse.json({ error: 'tenantId is required' }, { status: 400 });
     }
+
+    const denied = await requireSuperadminOrTenant(request, tenantId);
+    if (denied) return denied;
     if (date && !DATE_RE.test(date)) {
       return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 });
     }
@@ -89,9 +89,6 @@ export async function GET(request: NextRequest) {
  *   amending an existing row for someone else -> attendance.other.amend
  */
 export async function POST(request: NextRequest) {
-  const denied = await requireSuperadminAuth(request);
-  if (denied) return denied;
-
   try {
     const body = await request.json();
     const { tenantId, userId, date, status, checkIn, checkOut, note, actorId } = body;
@@ -100,6 +97,9 @@ export async function POST(request: NextRequest) {
     if (missing.length) {
       return NextResponse.json({ error: `Missing required field(s): ${missing.join(', ')}` }, { status: 400 });
     }
+
+    const denied = await requireSuperadminOrTenant(request, tenantId);
+    if (denied) return denied;
     if (!DATE_RE.test(String(date))) {
       return NextResponse.json({ error: 'date must be YYYY-MM-DD' }, { status: 400 });
     }
@@ -197,9 +197,6 @@ export async function POST(request: NextRequest) {
 
 /** DELETE /api/attendance?tenantId=…&userId=…&date=…&actorId=… */
 export async function DELETE(request: NextRequest) {
-  const denied = await requireSuperadminAuth(request);
-  if (denied) return denied;
-
   try {
     const sp = request.nextUrl.searchParams;
     const tenantId = sp.get('tenantId');
@@ -210,6 +207,9 @@ export async function DELETE(request: NextRequest) {
     if (!tenantId || !userId || !date) {
       return NextResponse.json({ error: 'tenantId, userId and date are required' }, { status: 400 });
     }
+
+    const denied = await requireSuperadminOrTenant(request, tenantId);
+    if (denied) return denied;
 
     if (!(await can(tenantId, actorId, 'attendance.other.amend', { scope: 'DIRECT_REPORTS' }))) {
       return NextResponse.json(

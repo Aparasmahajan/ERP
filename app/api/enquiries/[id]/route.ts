@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { findBy, update, audit } from '@/lib/sheets/erpSheets';
 import { requireSuperadminAuth, superadminIdFrom } from '@/lib/auth/middleware';
 import { provisionTenant } from '@/lib/provisioning/provisionTenant';
+import { createInviteToken, inviteUrl } from '@/lib/auth/tenantAuth';
 import type { EnquiryRow } from '../route';
 
 /**
@@ -98,12 +99,20 @@ export async function PATCH(request: NextRequest, ctx: { params: Promise<{ id: s
       reason: 'Accepted and provisioned',
     });
 
+    // Provisioned users have no password, so the admin cannot sign in until they accept
+    // an invite. Return the link directly — Resend is not configured yet, so the
+    // superadmin passes it on manually. Wiring email later is purely additive.
+    const invite = createInviteToken(result.tenantId, result.adminUserId);
+
     return NextResponse.json({
       success: true,
       status: 'ACCEPTED',
       tenantId: result.tenantId,
       slug: result.slug,
       portalUrl: `/portal/${result.slug}`,
+      loginUrl: `/portal/${result.slug}/login`,
+      inviteUrl: inviteUrl(invite),
+      adminEmail: enquiry.contactEmail,
       counts: result.counts,
     });
   } catch (error) {
