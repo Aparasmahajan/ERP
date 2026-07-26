@@ -259,3 +259,33 @@ export interface UserRole {
   isActing: boolean;
   assignedBy: string;
 }
+
+// ============ BRANDING CONFIG (Week 1) ============
+export interface BrandingConfig {
+  primary_color?: string;
+  secondary_color?: string;
+  logo_url?: string;
+  domain?: string;
+  [key: string]: any;
+}
+
+// ============ MODULE FEATURES (Week 1) ============
+export interface ModuleFeature {
+  feature_id: string;
+  name: string;
+  category: string;
+  enabled: boolean;
+  description: string;
+  phase: number;
+}
+
+// ============ EXCEL CAPABILITY (Week 1) ============
+export interface ExcelCapability {
+  user_id: string;
+  capability: string;
+  scope: 'SELF' | 'DIRECT_REPORTS' | 'DOWNLINE' | 'TENANT' | 'ORG_UNIT';
+  granted_by: string;
+  granted_at: string;
+  expires_at?: string;
+  delegable: boolean;
+}

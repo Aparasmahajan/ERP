@@ -390,16 +390,46 @@ function EnquiryModal({ template, primaryColor, onClose }: { template: Template;
     message: '',
   });
   const [submitted, setSubmitted] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Send to API
-    console.log('Enquiry:', { template: template.id, ...formData });
-    setSubmitted(true);
-    setTimeout(() => {
-      onClose();
-      setSubmitted(false);
-    }, 2000);
+    setSending(true);
+    setError('');
+
+    try {
+      const res = await fetch('/api/enquiries', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          templateId: template.id,
+          orgName: formData.organization,
+          contactName: formData.name,
+          contactEmail: formData.email,
+          message: formData.message,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        // Surface the real reason rather than claiming success, which is what the previous
+        // console.log stub did for every submission.
+        setError(json.error || 'Could not send your enquiry. Please try again.');
+        setSending(false);
+        return;
+      }
+
+      setSubmitted(true);
+      setTimeout(() => {
+        onClose();
+        setSubmitted(false);
+      }, 2500);
+    } catch {
+      setError('Could not reach the server. Please check your connection and try again.');
+    } finally {
+      setSending(false);
+    }
   };
 
   return (
@@ -421,6 +451,12 @@ function EnquiryModal({ template, primaryColor, onClose }: { template: Template;
               </p>
               <p className="text-xs text-slate-600 mt-1">{template.type}</p>
             </div>
+
+            {error && (
+              <div className="mb-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+                {error}
+              </div>
+            )}
 
             <form onSubmit={handleSubmit} className="space-y-4">
               <input
@@ -456,10 +492,11 @@ function EnquiryModal({ template, primaryColor, onClose }: { template: Template;
               />
               <button
                 type="submit"
-                className="w-full py-3 text-white rounded-lg font-semibold transition hover:shadow-lg"
+                disabled={sending}
+                className="w-full py-3 text-white rounded-lg font-semibold transition hover:shadow-lg disabled:opacity-60"
                 style={{ backgroundColor: primaryColor }}
               >
-                Submit Enquiry
+                {sending ? 'Sending…' : 'Submit Enquiry'}
               </button>
             </form>
           </>

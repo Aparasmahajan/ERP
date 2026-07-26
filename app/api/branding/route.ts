@@ -1,39 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { excelService } from '@/lib/excel/excelService';
-
-interface BrandingConfig {
-  tenantId: string;
-  primaryColor: string;
-  secondaryColor: string;
-  logoUrl?: string;
-  faviconUrl?: string;
-  customDomain?: string;
-  updatedAt: string;
-}
-
-const SHEET_NAME = 'branding_config';
+import { readBranding, writeBranding, writeAudit } from '@/lib/excel/excelService';
+import { v4 as uuid } from 'uuid';
 
 export async function GET(request: NextRequest) {
   try {
-    const tenantId = request.headers.get('x-tenant-id') || 'default';
+    const tenantId = request.nextUrl.searchParams.get('tenant_id');
 
-    const configs = await excelService.readSheet<BrandingConfig>(SHEET_NAME);
-    const config = configs.find(c => c.tenantId === tenantId);
-
-    if (!config) {
-      // Return defaults
-      return NextResponse.json({
-        tenantId,
-        primaryColor: '#2563eb',
-        secondaryColor: '#7c3aed',
-      });
+    if (!tenantId) {
+      return NextResponse.json(
+        { error: 'Missing tenant_id query parameter' },
+        { status: 400 }
+      );
     }
 
-    return NextResponse.json(config);
+    const branding = await readBranding(tenantId);
+    return NextResponse.json({ data: branding }, { status: 200 });
   } catch (error) {
-    console.error('Error reading branding config:', error);
+    console.error('Read branding error:', error);
     return NextResponse.json(
-      { error: 'Failed to read branding config' },
+      { error: error instanceof Error ? error.message : 'Failed to read branding' },
       { status: 500 }
     );
   }
@@ -41,35 +26,41 @@ export async function GET(request: NextRequest) {
 
 export async function PUT(request: NextRequest) {
   try {
-    const tenantId = request.headers.get('x-tenant-id') || 'default';
     const body = await request.json();
+    const { tenant_id, branding, actor_id } = body;
 
-    const configs = await excelService.readSheet<BrandingConfig>(SHEET_NAME);
-    const existingIndex = configs.findIndex(c => c.tenantId === tenantId);
-
-    const newConfig: BrandingConfig = {
-      tenantId,
-      primaryColor: body.primaryColor || '#2563eb',
-      secondaryColor: body.secondaryColor || '#7c3aed',
-      logoUrl: body.logoUrl,
-      faviconUrl: body.faviconUrl,
-      customDomain: body.customDomain,
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (existingIndex >= 0) {
-      configs[existingIndex] = newConfig;
-    } else {
-      configs.push(newConfig);
+    if (!tenant_id || !branding || typeof branding !== 'object') {
+      return NextResponse.json(
+        { error: 'Missing required fields: tenant_id, branding (object)' },
+        { status: 400 }
+      );
     }
 
-    await excelService.writeSheet(SHEET_NAME, configs);
+    const oldBranding = await readBranding(tenant_id);
+    await writeBranding(tenant_id, branding);
 
-    return NextResponse.json(newConfig);
-  } catch (error) {
-    console.error('Error updating branding config:', error);
+    // Log audit
+    if (actor_id) {
+      await writeAudit(tenant_id, {
+        id: uuid(),
+        timestamp: new Date().toISOString(),
+        action: 'UPDATE',
+        entity_type: 'branding',
+        entity_id: tenant_id,
+        who: actor_id,
+        before: JSON.stringify(oldBranding),
+        after: JSON.stringify(branding),
+      } as any);
+    }
+
     return NextResponse.json(
-      { error: 'Failed to update branding config' },
+      { success: true, data: branding },
+      { status: 200 }
+    );
+  } catch (error) {
+    console.error('Update branding error:', error);
+    return NextResponse.json(
+      { error: error instanceof Error ? error.message : 'Failed to update branding' },
       { status: 500 }
     );
   }

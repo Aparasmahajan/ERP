@@ -1,0 +1,15 @@
+{
+  "enquiries": ["id", "orgName", "contactName", "contactEmail", "contactPhone", "templateId", "pack", "message", "status", "createdAt", "reviewedBy", "reviewedAt", "rejectionReason", "tenantId", "code"],
+  "tenants": ["id", "slug", "name", "templateId", "pack", "status", "adminEmail", "timezone", "currency", "createdAt", "createdBy"],
+  "users": ["id", "tenantId", "code", "name", "email", "phone", "passwordHash", "status", "avatarUrl", "createdAt", "createdBy"],
+  "roles": ["id", "tenantId", "key", "title", "pack", "rank", "kind", "mayHoldReports", "maxDelegableRank", "color", "system"],
+  "role_grants": ["id", "tenantId", "roleId", "capability", "scope", "canDelegate"],
+  "user_roles": ["id", "tenantId", "userId", "roleId", "validFrom", "validTo", "isActing", "assignedBy", "assignedAt"],
+  "positions": ["id", "tenantId", "userId", "reportsToUserId", "orgUnitId", "titleOverride", "validFrom", "validTo", "sessionId"],
+  "org_units": ["id", "tenantId", "name", "parentUnitId", "kind", "code", "headUserId", "status"],
+  "capabilities": ["id", "tenantId", "userId", "capability", "mode", "scope", "grantedBy", "grantedAt", "expiresAt", "delegable"],
+  "attendance": ["id", "tenantId", "userId", "date", "status", "checkIn", "checkOut", "markedBy", "markedAt", "note"],
+  "audit": ["id", "tenantId", "timestamp", "action", "entityType", "entityId", "actorId", "before", "after", "reason"],
+  "branding": ["tenantId", "key", "value", "updatedAt", "updatedBy"],
+  "module_features": ["tenantId", "featureId", "name", "category", "enabled", "description", "phase"]
+}

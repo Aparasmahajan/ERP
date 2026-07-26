@@ -26,12 +26,20 @@ interface EmailOptions {
  */
 export async function sendEmail(options: EmailOptions): Promise<{ success: boolean; messageId?: string; error?: string }> {
   try {
+    // Resend requires a body — one of html or text must be present. Reject up front
+    // rather than sending a blank email.
+    if (!options.html && !options.text) {
+      return { success: false, error: 'Email needs either html or text content.' };
+    }
+
     const result = await resend.emails.send({
       from: FROM_EMAIL,
       to: options.to,
       subject: options.subject,
-      html: options.html || options.text,
-      replyTo: options.replyTo || SUPPORT_EMAIL,
+      // resend v2 expects snake_case reply_to; `replyTo` is silently dropped, so replies
+      // would have gone to the noreply address instead.
+      reply_to: options.replyTo || SUPPORT_EMAIL,
+      ...(options.html ? { html: options.html } : { text: options.text as string }),
     });
 
     if (result.error) {
