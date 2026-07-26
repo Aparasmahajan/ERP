@@ -13,7 +13,7 @@ export default function PortalLayout({
     <div className="flex h-screen bg-slate-50">
       <aside className="w-64 bg-slate-900 text-white p-4 overflow-y-auto">
         <div className="mb-8">
-          <h1 className="text-2xl font-bold">Hexaframe ERP</h1>
+          <h1 className="text-2xl font-bold">ERP</h1>
           <p className="text-sm text-slate-400">Multi-tenant Portal</p>
         </div>
 
