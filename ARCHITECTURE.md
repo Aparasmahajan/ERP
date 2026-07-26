@@ -2,7 +2,7 @@
 
 ## Overview
 
-**Hexaframe ERP** follows a multi-tier architecture, currently running on Next.js + Excel (MVP), designed to migrate to Spring Boot + PostgreSQL.
+**ERP** follows a multi-tier architecture, currently running on Next.js + Excel (MVP), designed to migrate to Spring Boot + PostgreSQL.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -378,6 +378,9 @@ GET /api/users
   → If miss, query Postgres
   → Cache in Redis for 5 minutes
   → Return
+
+File Storage:
+  Current: ./uploads/ (local disk, MVP-friendly)
 ```
 
 ---

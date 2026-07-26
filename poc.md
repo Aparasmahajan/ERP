@@ -1,6 +1,6 @@
 # ERP Portal — Proof of Concept & Build Specification (v2)
 
-**Working name:** Hexaframe ERP (placeholder — rename freely)
+**Working name:** ERP (placeholder — rename freely)
 **Stack:** Java 21 + Spring Boot 3.3 (configurable modular monolith) · PostgreSQL 16 · Next.js 15 (App Router, TypeScript) · Redis · S3-compatible object store
 **Verticals:** Institutions (schools / colleges) **and** Organisations (offices / businesses) — one engine, **two distinct role catalogues**
 **Supersedes:** `archive/poc-v1.md`
@@ -606,6 +606,309 @@ Salary is read-restricted: `payroll.salary.read` is dangerous, fields encrypted 
 
 `tenant, plan, plan_feature, subscription, impersonation_session, platform_audit, announcement, feature_flag, usage_metric, job_run, error_report`.
 **Edge cases:** suspending a tenant mid-session (read-only banner, then logout on next write) · tenant deletion (30-day window, export bundle, purge certificate) · an import that would exceed the seat limit (whole batch rejected, never partial).
+
+### 8.14 Inventory & Billing (Retail / Shops) — NEW
+
+**Core Entities**
+
+```
+product                id, tenant_id, sku, barcode, name, description, category, 
+                       unit_price, cost_price, reorder_level, shelf_life_days, status
+inventory_stock        product_id, location_id, quantity_on_hand, reserved, available,
+                       last_recount_at, recount_variance, session_id
+stock_movement         id, product_id, location_id, type (PURCHASE|SALE|RETURN|ADJUSTMENT|
+                       DAMAGE|TRANSFER), quantity, reason, reference_doc, created_by, 
+                       moved_at, movement_batch_id, settled
+billing_transaction    id, cashier_user_id, location_id, bill_no, bill_date, amount,
+                       payment_method (CASH|CARD|UPI|CHEQUE|CREDIT), state (DRAFT|COMPLETED|
+                       VOIDED|REFUNDED), customer_id?, created_at
+bill_line              transaction_id, line_no, product_id, quantity_sold, unit_price, 
+                       discount_percent, amount, movement_id  -- links to stock_movement for tracking
+stock_transfer         id, from_location_id, to_location_id, created_by, approved_by?,
+                       state (DRAFT|APPROVED|REJECTED|IN_TRANSIT|RECEIVED), transfer_date,
+                       transfer_lines[{product_id, quantity, received_qty?}]
+```
+
+**Permission Model — Fine-Grained per Role & Individual**
+
+The five-sieve model applies strictly:
+- **L1 PLAN:** Is inventory module enabled for this tenant's plan?
+- **L2 TENANT FLAGS:** Can this location do billing? Can stock adjustments be made?
+- **L3 ROLE PRESET:** Does the role bundle include `billing.transaction.create` or `inventory.stock.adjust`?
+- **L4 PERSON OVERRIDE:** Was `billing.transaction.create` explicitly granted or revoked for this user?
+- **L5 REACH + POLICY:** Can this user see/write to this location? Is there a daily transaction limit?
+
+**Powers Catalogue — Inventory & Billing (21 capabilities)**
+
+```
+inventory.product.*         TENANT 1  (create, read, update, delete products)
+inventory.stock.read        LOCATION  (view stock levels per location)
+inventory.stock.adjust      LOCATION  2  (write-off, damage, expiry)
+inventory.transfer.*        TENANT    (inter-location transfers, approval)
+inventory.recount           LOCATION  (periodic physical count, variance logging)
+
+billing.transaction.create  LOCATION  2  (create & complete bills)  ⚠ gated capability
+billing.transaction.void    LOCATION  1  (void completed bills, needs approval if > limit)
+billing.transaction.refund  LOCATION  2  (issue refunds, logs reason)
+billing.discount.apply      LOCATION  3  (apply discounts on the fly)
+billing.transaction.read    LOCATION  (view bills, own and others)
+
+inventory.report.sales      LOCATION  (sales summary, product mix, trend)
+inventory.report.stock      LOCATION  (stock levels, aging, fast/slow movers)
+inventory.supplier.*        TENANT    (manage reorder, PO, supplier ledger)
+inventory.barcode.scan      LOCATION  (mark stock via barcode/QR in billing flow)
+```
+
+**Capabilities & Delegation Rules**
+
+- **`billing.transaction.create`** is **gated**: a shop worker gets this only if the admin grants it.
+  - Once granted, they can create bills in their assigned location(s).
+  - The UI shows "Billing" tab only if `effective('billing.transaction.create')` is true.
+  - A Team Lead (manager) can delegate `billing.transaction.create` to Team Members **if they hold it themselves** (§4.6 subset rule).
+
+- **`inventory.stock.adjust`** requires **reach**: the user must be able to see the location. A district manager holding `DOWNLINE` reach can adjust stock in any branch under them; a branch manager cannot adjust outside their own unit.
+
+- **`billing.transaction.void`** is rank-gated: only Manager and above by default (configurable per tenant). Grantable to lower ranks only with written override (`POLICY_OVERRIDE` audited).
+
+**Billing & Stock Tracking Flow**
+
+```
+1. Cashier scans product (barcode/QR) or searches
+   - UI checks effective('billing.transaction.create') + location in reach → display price & stock
+   - If stock = 0 → "Out of stock" warning; can still add (backorder flag)
+
+2. Add to bill (qty, unit price [changeable if effective('billing.discount.apply')], discount %)
+   - Live total, GST calculation (configurable per region)
+   - Customer info optional (for loyalty program)
+
+3. Payment method selected
+   - CASH: count in register
+   - CARD/UPI: gateway integration
+   - CHEQUE: reference, post-dated if configured
+   - CREDIT: only if customer has credit limit (invoice_ledger link)
+
+4. Complete Bill
+   - Bill gets unique number (date + seq, or custom format per tenant)
+   - Stock moves: quantity_sold + tax = 1 stock_movement per line
+   - Movement linked to bill_line for traceability
+   - Audit writes: who, when, amount, payment method, location
+
+5. For Returns:
+   - Refund option: qty × unit_price, reason logged, stock_movement RETURN issued
+   - If > refund_limit: needs manager approval (rule chain §4.5)
+
+6. Void/Cancel (before payment):
+   - Cancels stock_movements (quantity += moved qty)
+   - Audit log: reason, voided_by, timestamp
+```
+
+**Excel & Reporting — Sold Items Tracking**
+
+The system exports daily/weekly to Excel (configurable frequency):
+
+```
+Sheet: Transactions (Daily)
+  Bill No | Date | Cashier | Location | Amount | Payment | Status | Voided?
+
+Sheet: Sales Detail (Line-level)
+  Bill No | Product | Category | Qty Sold | Unit Price | Discount % | Amount | Timestamp
+
+Sheet: Stock Movement
+  Date | Product | SKU | Location | Type (SALE|RETURN|ADJUSTMENT) | Qty | Reference | By Whom | Timestamp
+
+Sheet: Inventory Status
+  Product | SKU | Location | Qty On Hand | Reserved | Available | Last Count | Variance
+```
+
+**Admin-Configurable Features** (can be turned on/off per store)
+
+Each feature below can be enabled or disabled by the admin in **Settings → Inventory & Billing Features**. When disabled, the feature is hidden from the UI and cannot be used.
+
+#### **Core Features** (usually always enabled)
+1. **Basic Billing** — Create bills, collect payment (cash/card), print receipt. Always on.
+2. **Stock Tracking** — See how many items you have, mark items sold. Always on.
+
+#### **Scanning & Speed**
+3. **📱 Barcode Scanning** ✅ 
+   - **What:** Cashier scans product barcode instead of typing
+   - **Why:** Faster, fewer mistakes, works on phone/tablet
+   - **Cost:** Free; you need a barcode scanner (₹500-2000)
+   - **On/Off:** Let staff scan, or require manual entry
+
+#### **Alerts & Reminders**
+4. **⚠️ Low Stock Warnings**
+   - **What:** Alert when you're running out (e.g., "Milk: only 3 left")
+   - **Why:** Never stock-out; reorder in time
+   - **Who sees:** Store manager + owner
+   - **Can turn off:** Yes (if you manage stock manually)
+
+5. **📧 Daily Sales Recap**
+   - **What:** Summary at 9 PM: "Today: ₹45,000 sales, 180 items sold, 2 refunds"
+   - **Why:** Know how the day went without asking staff
+   - **Gets:** Text or email summary
+   - **Can turn off:** Yes
+
+6. **🔔 Expiry Date Alerts** (for groceries/pharmacy)
+   - **What:** Alert 3 days before milk/medicine expires
+   - **Why:** Sell before expiry; don't waste money
+   - **Can turn off:** Yes (if no perishables)
+
+#### **Customer Features**
+7. **👥 Loyalty Program**
+   - **What:** Customers earn points per purchase; redeem for discounts
+   - **Why:** Repeat customers spend more
+   - **Example:** "₹100 spent = 10 points; 100 points = ₹100 off next time"
+   - **Can turn off:** Yes (if you don't want loyalty tracking)
+
+8. **💳 Buy on Credit**
+   - **What:** Allow trusted customers to "owe you" (like a tab)
+   - **Why:** Convenience for regulars; helps cash flow (if they pay later)
+   - **Example:** "Arjun owes ₹5000; due next Friday"
+   - **Safeguard:** Set credit limits per customer
+   - **Can turn off:** Yes (cash-only mode)
+
+9. **📱 Digital Receipt**
+   - **What:** Send receipt via SMS/email/WhatsApp instead of printing
+   - **Why:** Eco-friendly, customer keeps receipt easily, reduces paper
+   - **Can turn off:** Yes (print-only)
+
+#### **Inventory & Stock**
+10. **📦 Inter-Store Transfers**
+    - **What:** If store A is out of milk, transfer from store B
+    - **Why:** Use network efficiently; never disappoint customer
+    - **How:** Request → approve → delivered (tracked)
+    - **Can turn off:** Yes (single-store; no transfers needed)
+
+11. **🔄 Stock Reconciliation**
+    - **What:** Periodic physical count (e.g., weekly) vs. system
+    - **Why:** Catch theft, mistakes, or losses
+    - **Variance:** If 10 missing, reason logged (damaged? stolen? miscounted?)
+    - **Can turn off:** Yes (if you never recount)
+
+12. **🗓️ Expiry Date Management**
+    - **What:** Track when products expire; auto-remove at expiry
+    - **Why:** For perishables (food, medicine), don't sell expired items
+    - **Can turn off:** Yes (only if non-perishables)
+
+#### **Staff Management**
+13. **⭐ Staff Performance Tracking**
+    - **What:** See each cashier's stats: transactions, speed, refund rate
+    - **Why:** Identify top performers, spot issues early
+    - **Info shown:** "Arjun: 120 bills/shift, 2 refunds" vs "Raj: 95 bills, 5 refunds"
+    - **Can turn off:** Yes (privacy; only see totals)
+
+14. **🎯 Cashier Bonus Tracker**
+    - **What:** Set targets (e.g., "100 bills/day = ₹500 bonus") and track
+    - **Why:** Motivate staff; increase sales
+    - **Can turn off:** Yes (no bonuses)
+
+#### **Data & Reports**
+15. **📊 Daily Sales Report**
+    - **What:** Every day: total ₹, units sold, top products, cash vs. card split
+    - **Why:** Track business health; spot trends
+    - **Format:** Email/SMS or view in app
+    - **Can turn off:** Yes
+
+16. **📈 Product Analytics**
+    - **What:** Which products sell most, margins, profit per product
+    - **Why:** Know what's profitable; phase out losers
+    - **Example:** "Coffee: 25% margin. Juice: 8% margin → consider replacing"
+    - **Can turn off:** Yes
+
+17. **🔍 Customer Insights**
+    - **What:** See patterns: "Mrs. Sharma buys every Friday" or "Arjun spends ₹500/week"
+    - **Why:** Personalize service; offer relevant deals
+    - **Can turn off:** Yes
+
+#### **Smart Suggestions**
+18. **💡 Reorder Suggestions**
+    - **What:** System suggests "Order 50 Milk by Friday based on sales pace"
+    - **Why:** Never stock-out; optimize order timing
+    - **Can turn off:** Yes (manual ordering)
+
+19. **🎁 Bundle Deal Ideas**
+    - **What:** "Milk + bread combo sells 60% of the time → offer combo discount"
+    - **Why:** Increase basket size; move slow items
+    - **Can turn off:** Yes
+
+20. **💰 Smart Pricing Hints**
+    - **What:** "Chips not selling; try ₹5 off to clear stock"
+    - **Why:** Maximize profit; clear slow-moving items
+    - **Can turn off:** Yes
+
+#### **Connectivity & Resilience**
+21. **📵 Offline Billing**
+    - **What:** If internet is down, cashier can still create bills; they sync when online
+    - **Why:** Never stop sales because WiFi died
+    - **Can turn off:** Yes (always-online mode)
+
+22. **☁️ Auto Cloud Backup**
+    - **What:** All bills automatically backed up to cloud every hour
+    - **Why:** Never lose data if register crashes
+    - **Can turn off:** No (security; always on)
+
+#### **Admin Control Panel**
+
+**Settings → Inventory & Billing Features**
+
+```
+┌─ CORE (always on)
+├─ Basic Billing ............................ ✓ ON
+├─ Stock Tracking ........................... ✓ ON
+│
+├─ SCANNING & SPEED
+├─ Barcode Scanning ......................... ✓ ON  / OFF
+│
+├─ ALERTS & REMINDERS
+├─ Low Stock Warnings ....................... ✓ ON  / OFF
+├─ Daily Sales Recap ........................ ✓ ON  / OFF
+├─ Expiry Date Alerts ....................... ✗ OFF / ON
+│
+├─ CUSTOMER FEATURES
+├─ Loyalty Program .......................... ✓ ON  / OFF
+├─ Buy on Credit ............................ ✓ ON  / OFF
+│   ├─ Max credit limit per customer: ₹10000
+│   └─ Payment due reminder: 3 days before due
+├─ Digital Receipt .......................... ✓ ON  / OFF
+│
+├─ INVENTORY & STOCK
+├─ Inter-Store Transfers ................... ✗ OFF / ON
+├─ Stock Reconciliation ..................... ✓ ON  / OFF
+├─ Expiry Date Management ................... ✓ ON  / OFF
+│
+├─ STAFF MANAGEMENT
+├─ Staff Performance Tracking ............... ✓ ON  / OFF
+├─ Cashier Bonus Tracker .................... ✗ OFF / ON
+│   └─ Set bonus rule: "100 bills = ₹500"
+│
+├─ DATA & REPORTS
+├─ Daily Sales Report ....................... ✓ ON  / OFF
+├─ Product Analytics ........................ ✓ ON  / OFF
+├─ Customer Insights ........................ ✗ OFF / ON
+│
+├─ SMART SUGGESTIONS
+├─ Reorder Suggestions ...................... ✓ ON  / OFF
+├─ Bundle Deal Ideas ........................ ✗ OFF / ON
+├─ Smart Pricing Hints ...................... ✗ OFF / ON
+│
+└─ CONNECTIVITY
+  ├─ Offline Billing ........................ ✓ ON  / OFF
+  └─ Auto Cloud Backup ..................... ✓ ON (always)
+```
+
+---
+
+**How Features Work Together** (examples)
+
+| Scenario | Features Used |
+|---|---|
+| Morning, milk is low | Low Stock Warning + Reorder Suggestion → order 50 by noon |
+| Evening, customer wants credit | Buy on Credit enabled → set limit ₹5000 → track when due |
+| End of day | Daily Sales Recap + Product Analytics → see what sold, margins |
+| Weekly recount | Stock Reconciliation → verify system matches shelves → log variance |
+| Loyal customer returns | Loyalty Program + Customer Insights → "Welcome back! You have 50 points" |
+| Barcode data | Barcode Scanning → faster billing → better staff analytics |
+| Internet down | Offline Billing → bills created locally → sync when online → no lost sales |
 
 ---
 

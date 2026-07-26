@@ -39,6 +39,7 @@ lerna-debug.log*
 
 # Data
 data/
+uploads/
 *.xlsx
 *.xls
 

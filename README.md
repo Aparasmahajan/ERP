@@ -1,10 +1,10 @@
-# Hexaframe ERP — Multi-Tenant Portal (MVP with Excel Backend)
+# ERP — Multi-Tenant Portal (MVP with Excel Backend)
 
 A modern, configurable ERP system for educational institutions and organizations. This is the **Phase 0 MVP** built with **Next.js 15 + Excel storage**, designed to be migrated to **Spring Boot + PostgreSQL** later.
 
 ## 🎯 What It Is
 
-**Hexaframe ERP** is a multi-tenant SaaS platform that handles:
+**ERP** is a multi-tenant SaaS platform that handles:
 
 - **Two role catalogues** — Institution pack (schools/colleges) & Organisation pack (offices/businesses)
 - **Arbitrary-depth hierarchies** — unlimited reporting chains, not fixed levels
@@ -47,6 +47,10 @@ npm run dev
 
 # Open browser
 # http://localhost:3000
+
+# Data will be stored in:
+# - data/erp-data.xlsx (Excel database)
+# - uploads/[tenant-id]/ (user files, photos, documents)
 ```
 
 ### First Steps
