@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminNav, PageHeading, Pill, StatTile, StatusPill } from './AdminNav';
+import Link from 'next/link';
 
 interface Stats {
   enquiries: { total: number; pending: number; accepted: number; rejected: number; conversionPct: number | null };
@@ -111,9 +112,9 @@ export default function AdminDashboard() {
 
         <div className="mb-4 flex items-end justify-between">
           <h2 className="font-serif text-2xl text-slate-900">Recent enquiries</h2>
-          <a href="/admin/enquiries" className="text-sm text-slate-600 underline hover:text-slate-900">
+          <Link href="/admin/enquiries" className="text-sm text-slate-600 underline hover:text-slate-900">
             See all →
-          </a>
+          </Link>
         </div>
 
         {recent.length === 0 ? (
@@ -121,9 +122,9 @@ export default function AdminDashboard() {
             <p className="text-slate-600">No enquiries yet.</p>
             <p className="mt-2 text-sm text-slate-500">
               They arrive from the template cards on the{' '}
-              <a href="/" className="underline">
+              <Link href="/" className="underline">
                 landing page
-              </a>
+              </Link>
               .
             </p>
           </div>
@@ -144,9 +145,9 @@ export default function AdminDashboard() {
                   {recent.map((e) => (
                     <tr key={e.id} className="border-b border-slate-100 last:border-0 hover:bg-slate-50">
                       <td className="px-5 py-3">
-                        <a href="/admin/enquiries" className="font-mono text-xs text-slate-900 underline">
+                        <Link href="/admin/enquiries" className="font-mono text-xs text-slate-900 underline">
                           {e.code || e.id.slice(0, 12)}
-                        </a>
+                        </Link>
                       </td>
                       <td className="px-5 py-3 text-slate-900">{e.orgName}</td>
                       <td className="px-5 py-3 text-slate-600">{e.templateId}</td>

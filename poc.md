@@ -607,6 +607,111 @@ Salary is read-restricted: `payroll.salary.read` is dangerous, fields encrypted 
 `tenant, plan, plan_feature, subscription, impersonation_session, platform_audit, announcement, feature_flag, usage_metric, job_run, error_report`.
 **Edge cases:** suspending a tenant mid-session (read-only banner, then logout on next write) · tenant deletion (30-day window, export bundle, purge certificate) · an import that would exceed the seat limit (whole batch rejected, never partial).
 
+### 8.15 Dotted lines & acting delegation — IMPLEMENTED (Sheets)
+
+#### 8.15.1 Why one manager, plus links
+
+`positions.reportsToUserId` holds **exactly one** manager per person. That is deliberate:
+it is the line of authority, and it is what makes *"who approves this leave request?"*
+answerable. Allow two full managers and every approval is either double-handled or
+dropped.
+
+Organisations still need more than one relationship per person:
+
+> A teacher reports to her **Head of Department** for leave and appraisal, answers to a
+> **Class Coordinator** for 9A, and teaches three subjects each with its own **subject
+> lead**.
+
+So there are two tables with deliberately different powers:
+
+| Table | Cardinality | Confers |
+|---|---|---|
+| `positions` | one parent | **approvals** + `DOWNLINE` scope — authority |
+| `position_link` | many links | **visibility only**, never approvals |
+
+A link can widen what you may *see*. It can never grant the right to approve, or to
+assign roles. That keeps the approval chain single-threaded while letting a subject lead
+view the teachers who teach their subject.
+
+`visibleUserIds()` returns the two sets separately — `viaTree` and `viaLink` — so a caller
+gating an approval uses the tree, and a caller gating a read may use both. Conflating them
+is the bug this split exists to prevent.
+
+#### 8.15.2 `position_link`
+
+```
+position_link  id, tenantId, userId, linkedToUserId, kind, subject, weight,
+               validFrom, validTo, createdBy, createdAt
+```
+
+`userId` is the person being seen; `linkedToUserId` is the dotted-line manager. `subject`
+qualifies the link — the class or subject it is scoped to — which is what lets one teacher
+carry a separate link per subject she teaches.
+
+Kinds: `FUNCTIONAL_LEAD`, `SUBJECT_LEAD`, `PROJECT_MANAGER`, `CLASS_COORDINATOR`,
+`MENTOR`, `ACADEMIC_ADVISOR`, `GUARDIAN_OF`, `DEPUTY_FOR`.
+
+Ending a link stamps `validTo` rather than deleting the row, so history survives.
+
+#### 8.15.3 One teacher, several subjects
+
+No new mechanism. One `SUBJECT_LEAD` link per subject, each with `subject` set:
+
+```
+faculty=FAC001 -> hod=HOD001   kind=SUBJECT_LEAD  subject=Mathematics
+faculty=FAC001 -> hod=HOD001   kind=SUBJECT_LEAD  subject=Physics
+faculty=FAC001 -> hod=HOD001   kind=SUBJECT_LEAD  subject=Chemistry
+faculty=FAC001 -> cc=CC001     kind=CLASS_COORDINATOR  subject=Class 9A
+```
+
+Four dotted managers, one line manager. Subject-level marks and attendance hang off the
+`subject` qualifier.
+
+#### 8.15.4 Acting delegation — "she is away, give someone her powers"
+
+Two distinct cases, and conflating them is the trap:
+
+**a) The authority comes from a ROLE.** Delegate the role: a `user_roles` row with
+`isActing = true` and a `validTo`. `rolesOf()` already filters on the validity window, so
+**the cover lapses on its own** — no scheduled job, nothing to clean up.
+
+**b) The authority comes from a SPECIFIC ASSIGNMENT.** This is the common school case and
+role delegation does *nothing* for it. Two teachers normally share the same `Faculty`
+role, so there is no role to hand over — what distinguishes the class teacher of 9A is a
+`position_link`. `delegateLinks()` copies the absent person's links to the stand-in with
+an end date. The originals are left in place: she keeps her assignments and simply has a
+deputy alongside her until the cover lapses.
+
+When a role delegation finds nothing to transfer, the error says so and points at
+assignment cover rather than failing opaquely.
+
+**Who may delegate.** The actor must be an **ancestor of the target in the reporting
+tree** — the "one level above" in the requirement, generalised. A peer cannot hand out a
+colleague's authority, and nobody can delegate upwards.
+
+`DEPUTY_FOR` is deliberately **not** accepted as grounds to delegate. A standing deputy
+may see their principal's downline, but letting a dotted line create authority would
+reintroduce the exact ambiguity the two-table split exists to prevent.
+
+#### 8.15.5 Status
+
+Implemented against the Google Sheets backend and covered by `npm run test-hierarchy`
+(47 assertions), including the guarantees that a dotted line grants no authority, that a
+peer cannot grant cover, that open-ended and back-dated cover are refused, and that
+expired cover stops counting without any cleanup step.
+
+**On the database migration:** `position_link` maps to a plain table with a composite
+index on `(tenantId, linkedToUserId, validTo)`. Two things change when the DB lands:
+
+* `position_closure` (§4.3) makes `visibleUserIds` a single indexed query instead of the
+  in-memory tree walk used here — the walk is fine at a few hundred people per tenant and
+  will not be at tens of thousands.
+* Delegation becomes transactional. Right now `delegateLinks` appends rows one at a time,
+  so an interruption can leave partial cover in place. That is tolerable at this scale and
+  is exactly the class of problem §8.14.0 flags for billing.
+
+Neither is a reason to defer the feature; both are reasons to revisit it during migration.
+
 ### 8.14 Inventory & Billing (Retail / Shops) — NEW
 
 #### 8.14.0 Architecture decision — one app, split by datastore

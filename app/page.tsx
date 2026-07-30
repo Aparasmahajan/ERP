@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 interface Template {
   id: string;
@@ -170,13 +171,13 @@ export default function Home() {
             >
               🎨 Colors
             </button>
-            <a
-              href="/setup"
+            <Link
+              href="/templates"
               className="px-6 py-2 text-white rounded-lg font-semibold transition"
               style={{ backgroundColor: primaryColor }}
             >
               Get Started
-            </a>
+            </Link>
           </div>
         </div>
       </nav>
@@ -201,13 +202,13 @@ export default function Home() {
             >
               Choose Template
             </a>
-            <a
+            <Link
               href="/demo"
               className="px-8 py-3 border-2 rounded-lg font-semibold transition"
               style={{ borderColor: primaryColor, color: primaryColor }}
             >
               👀 Preview Demo
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -262,13 +263,13 @@ export default function Home() {
               </div>
 
           <div className="text-center">
-            <a
+            <Link
               href="/templates"
               className="inline-block px-6 py-3 border-2 rounded-lg font-semibold transition"
               style={{ borderColor: primaryColor, color: primaryColor }}
             >
               Browse All {ALL_TEMPLATES.length} Templates →
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -293,7 +294,7 @@ export default function Home() {
       <section className="py-20 px-6" style={{ background: `linear-gradient(135deg, ${primaryColor}, ${secondaryColor})` }}>
         <div className="max-w-3xl mx-auto text-center">
           <h2 className="text-4xl font-bold text-white mb-6">Ready to Get Started?</h2>
-          <p className="text-white/90 text-lg mb-8">Choose your template and submit an enquiry. We'll customize your portal instantly.</p>
+          <p className="text-white/90 text-lg mb-8">Choose your template and submit an enquiry. We&apos;ll customize your portal instantly.</p>
           <div className="flex gap-4 justify-center flex-wrap">
             <a
               href="#featured"
@@ -302,12 +303,12 @@ export default function Home() {
             >
               Choose Template ↑
             </a>
-            <a
+            <Link
               href="/demo"
               className="px-8 py-4 border-2 border-white text-white rounded-lg font-bold text-lg hover:bg-white/10 transition"
             >
               👀 Preview Demo
-            </a>
+            </Link>
           </div>
         </div>
       </section>
@@ -504,7 +505,7 @@ function EnquiryModal({ template, primaryColor, onClose }: { template: Template;
           <div className="text-center py-8">
             <div className="text-5xl mb-4">✓</div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Thank You!</h3>
-            <p className="text-slate-600">We've received your enquiry. We'll be in touch soon!</p>
+            <p className="text-slate-600">We&apos;ve received your enquiry. We&apos;ll be in touch soon!</p>
           </div>
         )}
       </div>
