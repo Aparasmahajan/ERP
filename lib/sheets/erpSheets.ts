@@ -111,33 +111,69 @@ async function withRetry<T>(label: string, fn: () => Promise<T>, attempts = 5): 
   throw lastErr;
 }
 
+/**
+ * Titles of the tabs that exist, fetched once per process.
+ *
+ * spreadsheets.get returns metadata for EVERY tab, so asking per-tab meant 13 identical
+ * round trips on a cold start, plus a values.get each to inspect the header row: 26 calls
+ * before any real work. That alone could exhaust the per-minute read quota.
+ */
+let existingTabs: Set<string> | null = null;
+
+/** Numeric sheetId per tab, cached. Needed for row deletion. */
+const sheetIds = new Map<string, number>();
+
+async function loadMetadata(): Promise<Set<string>> {
+  if (existingTabs) return existingTabs;
+  const meta = await withRetry('spreadsheet metadata', () =>
+    client().spreadsheets.get({ spreadsheetId: spreadsheetId() })
+  );
+  const titles = new Set<string>();
+  for (const sh of meta.data.sheets || []) {
+    const title = sh.properties?.title;
+    const id = sh.properties?.sheetId;
+    if (title) {
+      titles.add(title);
+      if (id != null) sheetIds.set(title, id);
+    }
+  }
+  existingTabs = titles;
+  return titles;
+}
+
+async function sheetIdFor(tab: string): Promise<number | null> {
+  if (sheetIds.has(tab)) return sheetIds.get(tab)!;
+  await loadMetadata();
+  return sheetIds.get(tab) ?? null;
+}
+
 async function ensureTab(tab: string): Promise<void> {
   if (ensured.has(tab)) return;
-  if (!HEADERS[tab]) throw new Error(`Unknown tab "${tab}" — add it to HEADERS first`);
+  if (!HEADERS[tab]) throw new Error(`Unknown tab "${tab}" - add it to HEADERS first`);
 
-  const api = client();
-  const meta = await api.spreadsheets.get({ spreadsheetId: spreadsheetId() });
-  const exists = meta.data.sheets?.some((s) => s.properties?.title === tab);
+  const tabs = await loadMetadata();
 
-  if (!exists) {
-    await api.spreadsheets.batchUpdate({
-      spreadsheetId: spreadsheetId(),
-      requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
-    });
-  }
-
-  // Write the header row if the tab is empty.
-  const res = await api.spreadsheets.values.get({
-    spreadsheetId: spreadsheetId(),
-    range: `${tab}!1:1`,
-  });
-  if (!res.data.values || res.data.values.length === 0) {
-    await api.spreadsheets.values.update({
-      spreadsheetId: spreadsheetId(),
-      range: `${tab}!A1`,
-      valueInputOption: 'RAW',
-      requestBody: { values: [HEADERS[tab]] },
-    });
+  if (!tabs.has(tab)) {
+    // Only a freshly created tab needs its header row written. Existing tabs were set up
+    // by `npm run init-sheets`, which also handles column migrations.
+    await withRetry(`create ${tab}`, () =>
+      client().spreadsheets.batchUpdate({
+        spreadsheetId: spreadsheetId(),
+        requestBody: { requests: [{ addSheet: { properties: { title: tab } } }] },
+      })
+    );
+    await withRetry(`headers ${tab}`, () =>
+      client().spreadsheets.values.update({
+        spreadsheetId: spreadsheetId(),
+        range: `${tab}!A1`,
+        valueInputOption: 'RAW',
+        requestBody: { values: [HEADERS[tab]] },
+      })
+    );
+    tabs.add(tab);
+    // A new tab means our cached sheetId map is stale.
+    existingTabs = null;
+    sheetIds.clear();
   }
 
   ensured.add(tab);
@@ -204,13 +240,15 @@ export async function findBy<T>(
 
 export async function append<T extends object>(tab: TabName, obj: T): Promise<void> {
   await ensureTab(tab as string);
-  await client().spreadsheets.values.append({
-    spreadsheetId: spreadsheetId(),
-    range: `${tab}!A1`,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: [rowFor(tab as string, obj as Record<string, unknown>)] },
-  });
+  await withRetry(`append ${tab}`, () =>
+    client().spreadsheets.values.append({
+      spreadsheetId: spreadsheetId(),
+      range: `${tab}!A1`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: [rowFor(tab as string, obj as Record<string, unknown>)] },
+    })
+  );
   cache.delete(tab as string);
 }
 
@@ -218,13 +256,15 @@ export async function append<T extends object>(tab: TabName, obj: T): Promise<vo
 export async function appendMany<T extends object>(tab: TabName, objs: T[]): Promise<void> {
   if (objs.length === 0) return;
   await ensureTab(tab as string);
-  await client().spreadsheets.values.append({
-    spreadsheetId: spreadsheetId(),
-    range: `${tab}!A1`,
-    valueInputOption: 'RAW',
-    insertDataOption: 'INSERT_ROWS',
-    requestBody: { values: objs.map((o) => rowFor(tab as string, o as Record<string, unknown>)) },
-  });
+  await withRetry(`appendMany ${tab}`, () =>
+    client().spreadsheets.values.append({
+      spreadsheetId: spreadsheetId(),
+      range: `${tab}!A1`,
+      valueInputOption: 'RAW',
+      insertDataOption: 'INSERT_ROWS',
+      requestBody: { values: objs.map((o) => rowFor(tab as string, o as Record<string, unknown>)) },
+    })
+  );
   cache.delete(tab as string);
 }
 
@@ -239,10 +279,12 @@ export async function update(
   patch: Record<string, unknown>
 ): Promise<boolean> {
   await ensureTab(tab as string);
-  const res = await client().spreadsheets.values.get({
-    spreadsheetId: spreadsheetId(),
-    range: `${tab}!${DATA_RANGE}`,
-  });
+  const res = await withRetry(`update-read ${tab}`, () =>
+    client().spreadsheets.values.get({
+      spreadsheetId: spreadsheetId(),
+      range: `${tab}!${DATA_RANGE}`,
+    })
+  );
   const rows = (res.data.values as string[][]) || [];
   const headers = HEADERS[tab as string];
   const keyIdx = headers.indexOf(keyCol);
@@ -254,13 +296,15 @@ export async function update(
   const current: Record<string, string> = {};
   headers.forEach((h, i) => (current[h] = rows[rowIdx][i] ?? ''));
 
-  await client().spreadsheets.values.update({
-    spreadsheetId: spreadsheetId(),
-    // +2 because rows are 1-indexed and row 1 is the header.
-    range: `${tab}!A${rowIdx + 2}`,
-    valueInputOption: 'RAW',
-    requestBody: { values: [rowFor(tab as string, { ...current, ...patch })] },
-  });
+  await withRetry(`update-write ${tab}`, () =>
+    client().spreadsheets.values.update({
+      spreadsheetId: spreadsheetId(),
+      // +2 because rows are 1-indexed and row 1 is the header.
+      range: `${tab}!A${rowIdx + 2}`,
+      valueInputOption: 'RAW',
+      requestBody: { values: [rowFor(tab as string, { ...current, ...patch })] },
+    })
+  );
   cache.delete(tab as string);
   return true;
 }
@@ -268,14 +312,15 @@ export async function update(
 export async function remove(tab: TabName, keyCol: string, keyVal: string): Promise<boolean> {
   await ensureTab(tab as string);
   const api = client();
-  const meta = await api.spreadsheets.get({ spreadsheetId: spreadsheetId() });
-  const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tab)?.properties?.sheetId;
+  const sheetId = await sheetIdFor(tab as string);
   if (sheetId == null) return false;
 
-  const res = await api.spreadsheets.values.get({
-    spreadsheetId: spreadsheetId(),
-    range: `${tab}!${DATA_RANGE}`,
-  });
+  const res = await withRetry(`remove-read ${tab}`, () =>
+    api.spreadsheets.values.get({
+      spreadsheetId: spreadsheetId(),
+      range: `${tab}!${DATA_RANGE}`,
+    })
+  );
   const rows = (res.data.values as string[][]) || [];
   const keyIdx = HEADERS[tab as string].indexOf(keyCol);
   if (keyIdx < 0) throw new Error(`Column "${keyCol}" is not in tab "${tab}"`);
@@ -283,23 +328,25 @@ export async function remove(tab: TabName, keyCol: string, keyVal: string): Prom
   const rowIdx = rows.findIndex((r) => (r[keyIdx] ?? '') === keyVal);
   if (rowIdx < 0) return false;
 
-  await api.spreadsheets.batchUpdate({
-    spreadsheetId: spreadsheetId(),
-    requestBody: {
-      requests: [
-        {
-          deleteDimension: {
-            range: {
-              sheetId,
-              dimension: 'ROWS',
-              startIndex: rowIdx + 1, // 0-indexed, +1 to skip the header
-              endIndex: rowIdx + 2,
+  await withRetry(`remove ${tab}`, () =>
+    api.spreadsheets.batchUpdate({
+      spreadsheetId: spreadsheetId(),
+      requestBody: {
+        requests: [
+          {
+            deleteDimension: {
+              range: {
+                sheetId,
+                dimension: 'ROWS',
+                startIndex: rowIdx + 1, // 0-indexed, +1 to skip the header
+                endIndex: rowIdx + 2,
+              },
             },
           },
-        },
-      ],
-    },
-  });
+        ],
+      },
+    })
+  );
   cache.delete(tab as string);
   return true;
 }
@@ -322,8 +369,7 @@ export async function removeWhere<T>(
   await ensureTab(tab as string);
   const api = client();
 
-  const meta = await withRetry('meta', () => api.spreadsheets.get({ spreadsheetId: spreadsheetId() }));
-  const sheetId = meta.data.sheets?.find((s) => s.properties?.title === tab)?.properties?.sheetId;
+  const sheetId = await sheetIdFor(tab as string);
   if (sheetId == null) return 0;
 
   const rows = await readRows(tab as string);
@@ -411,4 +457,6 @@ export async function initAllTabs(): Promise<string[]> {
 export function clearCache(): void {
   cache.clear();
   ensured.clear();
+  existingTabs = null;
+  sheetIds.clear();
 }

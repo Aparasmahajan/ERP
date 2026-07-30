@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { validateSuperadminAuth } from './superadminAuth';
+import { verifyTenantSession, TENANT_COOKIE } from './tenantAuth';
 
 export type AuthMiddlewareResponse = NextResponse | null;
 
@@ -96,6 +97,38 @@ export async function requireTenantAuth(
 }
 
 /**
+ * Allow either a platform superadmin, or a tenant user whose session belongs to
+ * `tenantId`. Returns null when the caller is permitted, or a 401 response otherwise.
+ *
+ * Needed because the same endpoints serve two audiences: a superadmin operating across
+ * tenants, and a tenant's own staff working inside their portal. Checking only for
+ * superadmin would lock tenant users out of their own data; checking only for a tenant
+ * session would lock out platform support.
+ *
+ * Note this authenticates *who you are*, not *what you may do* — the capability check
+ * (see lib/permissions/can.ts) still has to run.
+ */
+export async function requireSuperadminOrTenant(
+  request: NextRequest,
+  tenantId: string
+): Promise<NextResponse | null> {
+  // Superadmin first — it spans every tenant.
+  const adminToken = request.cookies.get('erp_auth_token')?.value;
+  if (adminToken && validateSuperadminAuth(`Bearer ${adminToken}`)) return null;
+
+  const tenantToken = request.cookies.get(TENANT_COOKIE)?.value;
+  if (tenantToken) {
+    const session = verifyTenantSession(tenantToken);
+    if (session && session.tenantId === tenantId) return null;
+  }
+
+  return NextResponse.json(
+    { error: 'Not signed in for this organisation.' },
+    { status: 401 }
+  );
+}
+
+/**
  * The authenticated superadmin's email, or null. Use for audit trails so a row records who
  * actually performed an action rather than a generic 'system'.
  */
@@ -108,5 +141,6 @@ export function superadminIdFrom(request: NextRequest): string | null {
 export default {
   requireSuperadminAuth,
   requireTenantAuth,
+  requireSuperadminOrTenant,
   superadminIdFrom,
 };

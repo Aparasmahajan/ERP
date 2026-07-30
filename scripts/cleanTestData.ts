@@ -18,11 +18,17 @@ const TENANT_TABS: TabName[] = [
   'org_units', 'attendance', 'audit', 'branding', 'module_features', 'capabilities',
 ];
 
-/** Anything a test run could have created. */
+/**
+ * Anything a test run could have created. Keep this in step with the org names used in
+ * scripts/testFlow.ts and scripts/testPortal.ts — a name added there and missed here means
+ * residue survives a crashed run and silently skews later assertions.
+ */
+const TEST_NAME = /^(flowtest|portaltest)/i;
+
 const isTestTenant = (t: { slug?: string; name?: string }) =>
-  /^flowtest-academy/.test(t.slug || '') ||
-  /^__roundtrip_test__/.test(t.slug || '') ||
-  /Flowtest/i.test(t.name || '');
+  TEST_NAME.test(t.slug || '') ||
+  TEST_NAME.test(t.name || '') ||
+  /^__roundtrip_test__/.test(t.slug || '');
 
 async function main() {
   console.log('\n=== Clearing leftover test data ===\n');
@@ -46,7 +52,7 @@ async function main() {
   // Enquiries carry the marker in their id; also catch the roundtrip tenantId marker.
   const enq = await removeWhere<{ id: string; orgName: string }>(
     'enquiries',
-    (e) => /__flowtest__|__roundtrip_test__/.test(e.id || '') || /Flowtest/i.test(e.orgName || '')
+    (e) => /__flowtest__|__roundtrip_test__/.test(e.id || '') || TEST_NAME.test(e.orgName || '')
   );
   console.log(`  removed ${enq} test enquiry row(s)`);
 

@@ -44,11 +44,12 @@ export class ExcelService {
 
     const workbook = new ExcelJS.Workbook();
     sheets.forEach((sheet) => {
-      const worksheet = workbook.addWorksheet(sheet.name, { hidden: sheet.hidden });
+      // exceljs expects `state`, not a `hidden` boolean.
+      const worksheet = workbook.addWorksheet(sheet.name, sheet.hidden ? { state: 'hidden' } : undefined);
       worksheet.columns = sheet.headers.map((header) => ({
         header,
         width: 20,
-      }));
+      })) as ExcelJS.Column[];
       // Style header row
       worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
       worksheet.getRow(1).fill = {
@@ -121,11 +122,13 @@ export class ExcelService {
     }
 
     // Get headers from first data object
-    const headers = Object.keys(data[0]);
+    const headers = Object.keys(data[0] as Record<string, unknown>);
+    // Partial column descriptors are accepted at runtime but no longer match the
+    // Column[] type, so state the shape explicitly.
     worksheet.columns = headers.map((header) => ({
       header: this.toTitleCase(header),
       width: 20,
-    }));
+    })) as ExcelJS.Column[];
 
     // Style header row
     worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
@@ -163,14 +166,14 @@ export class ExcelService {
       return;
     }
 
-    const headers = Object.keys(data[0]);
+    const headers = Object.keys(data[0] as Record<string, unknown>);
 
     // Initialize headers if sheet is empty
     if (worksheet.rowCount === 0) {
       worksheet.columns = headers.map((header) => ({
         header: this.toTitleCase(header),
         width: 20,
-      }));
+      })) as ExcelJS.Column[];
       worksheet.getRow(1).font = { bold: true, color: { argb: 'FFFFFFFF' } };
       worksheet.getRow(1).fill = {
         type: 'pattern',
