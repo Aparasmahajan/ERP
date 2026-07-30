@@ -1,0 +1,302 @@
+===============================================================================
+ ERP — COMMAND REFERENCE
+===============================================================================
+ Project: c:\Users\parmahaj\Documents\New folder\ERP
+ Backend: Google Sheets (primary) — https://docs.google.com/spreadsheets/d/1ZM2etv4VOWs-hkvvGMMPlEzc6wwBVNOc_B6PuRZ-7Xw
+ Stack:   Next.js 15.5.22 · React 19 · TypeScript · Tailwind
+
+ Run every command from the project root.
+===============================================================================
+
+
+-------------------------------------------------------------------------------
+ 1. FIRST-TIME SETUP
+-------------------------------------------------------------------------------
+
+  npm install
+      Install dependencies.
+
+  npm run init-sheets
+      Create all 13 tabs with header rows in the Google Sheet, then read them
+      back and diff against the expected headers. Safe to re-run — it only
+      adds what is missing.
+
+      Requires in .env (or .env.local):
+        GOOGLE_SHEETS_SPREADSHEET_ID
+        GOOGLE_SERVICE_ACCOUNT_EMAIL
+        GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY
+        SUPERADMIN_EMAIL
+        SUPERADMIN_PASSWORD
+        NEXTAUTH_SECRET
+
+      The sheet must be shared as EDITOR with the service-account email.
+
+
+-------------------------------------------------------------------------------
+ 2. RUN THE APP
+-------------------------------------------------------------------------------
+
+  npm run dev
+      Start the dev server.
+      NOTE: if port 3000 is already taken it will use 3001 — read the actual
+      URL from the output rather than assuming 3000.
+
+  npm run build
+      Production build.
+
+  npm start
+      Serve the production build (run `npm run build` first).
+
+
+-------------------------------------------------------------------------------
+ 3. TESTS
+-------------------------------------------------------------------------------
+
+  npm run test-flow                                        [57 checks]
+      End-to-end business flow against the real Google Sheet:
+        enquiry raised -> superadmin accepts -> tenant provisioned from the
+        chosen template -> users hold roles -> role capabilities take effect
+        -> attendance marked -> audit trail written
+      Creates and then removes all its own rows.
+
+  npm run test-sheets                                      [35 checks]
+      Google Sheets adapter round-trip: append / list / findBy / update /
+      remove / audit, tenant isolation, and that keys and values survive a
+      write->read cycle unchanged.
+
+  npm run test-demo                                        [43 checks]
+      Demo sandbox store (localStorage), run headlessly with a stub:
+      seeding all 9 templates, persistence, per-template isolation, reset,
+      reporting-loop guard, export/import, corrupt-data resilience.
+
+  npm run type-check
+      tsc --noEmit. Expect 3 errors, all in lib/excel/excelService.ts — the
+      legacy Excel adapter being superseded by Sheets. Anything else is new.
+
+  npm run lint
+      ESLint over .ts / .tsx.
+
+  Run all three suites in sequence:
+      npm run test-sheets && npm run test-demo && npm run test-flow
+
+
+-------------------------------------------------------------------------------
+ 4. MAINTENANCE
+-------------------------------------------------------------------------------
+
+  npm run clean-test-data
+      Remove rows left behind by an interrupted test run (test tenants,
+      test enquiries, round-trip strays). Uses batch deletion to stay inside
+      the Sheets quota. Run this if test-flow ever aborts partway.
+
+  npm run init-excel
+      LEGACY. Writes the old local Excel workbook to
+      data/tenants/demo-institution/demo-institution.xlsx.
+      Not used by the Sheets flow — kept only for reference.
+
+
+-------------------------------------------------------------------------------
+ 5. URLS
+-------------------------------------------------------------------------------
+ Replace 3000 with 3001 if the dev server said so on startup.
+
+  PUBLIC
+    http://localhost:3000/                      Landing page + featured templates
+    http://localhost:3000/templates             All 12 templates, search + filter
+    http://localhost:3000/demo                  Demo gallery by category
+    http://localhost:3000/demo/<template-id>    Editable sandbox for one template
+
+  SUPERADMIN  (log in first)
+    http://localhost:3000/login                 Sign in
+    http://localhost:3000/admin                 Dashboard with live counts
+    http://localhost:3000/admin/enquiries       *** ACCEPT / REJECT ENQUIRIES ***
+
+  TENANT PORTAL
+    http://localhost:3000/portal/<slug>         Still on the legacy Excel layer;
+                                                no auth, sidebar links 404.
+
+  Demo template ids:
+    student-info-system            course-management-platform
+    employee-management-suite      project-management-suite
+    patient-management-system      volunteer-management-portal
+    retail-operations-hub          fitness-center-management
+    logistics-fleet-management
+
+
+-------------------------------------------------------------------------------
+ 6. THE MAIN FLOW, BY HAND
+-------------------------------------------------------------------------------
+
+  1. npm run dev
+  2. Open  /              -> pick a template -> "Choose & Enquire" -> submit
+  3. Open  /login         -> sign in with SUPERADMIN_EMAIL / SUPERADMIN_PASSWORD
+  4. Open  /admin/enquiries
+  5. Click Accept         -> provisions a tenant: roles, role_grants, users,
+                             user_roles, positions, org_unit, features, branding
+  6. Check the Google Sheet — new rows appear across those tabs.
+
+
+-------------------------------------------------------------------------------
+ 7. API — curl
+-------------------------------------------------------------------------------
+ Bash / Git Bash syntax. Auth uses an httpOnly cookie, so save and reuse it.
+
+  # Submit an enquiry (public, no auth)
+  curl -X POST http://localhost:3000/api/enquiries \
+    -H "Content-Type: application/json" \
+    -d '{"templateId":"institution","orgName":"Acme School",
+         "contactName":"Asha","contactEmail":"asha@example.com",
+         "message":"Need attendance"}'
+
+  # Log in and keep the cookie
+  curl -X POST http://localhost:3000/api/auth/login \
+    -H "Content-Type: application/json" -c cookies.txt \
+    -d '{"email":"YOUR_SUPERADMIN_EMAIL","password":"YOUR_SUPERADMIN_PASSWORD"}'
+
+  # Confirm the session
+  curl http://localhost:3000/api/auth/verify -b cookies.txt
+
+  # Review queue
+  curl "http://localhost:3000/api/enquiries?status=NEW" -b cookies.txt
+
+  # Accept  (provisions the tenant)
+  curl -X PATCH http://localhost:3000/api/enquiries/<ENQUIRY_ID> \
+    -H "Content-Type: application/json" -b cookies.txt \
+    -d '{"action":"ACCEPT"}'
+
+  # Reject
+  curl -X PATCH http://localhost:3000/api/enquiries/<ENQUIRY_ID> \
+    -H "Content-Type: application/json" -b cookies.txt \
+    -d '{"action":"REJECT","reason":"Out of scope"}'
+
+  # Dashboard counts
+  curl http://localhost:3000/api/admin/stats -b cookies.txt
+
+  # Role assignments for a tenant, and one person's effective capabilities
+  curl "http://localhost:3000/api/user-roles?tenantId=<TENANT_ID>" -b cookies.txt
+  curl "http://localhost:3000/api/user-roles?tenantId=<TENANT_ID>&userId=<USER_ID>" -b cookies.txt
+
+  # Assign a role
+  curl -X POST http://localhost:3000/api/user-roles \
+    -H "Content-Type: application/json" -b cookies.txt \
+    -d '{"tenantId":"<TENANT_ID>","userId":"<USER_ID>",
+         "roleId":"<ROLE_ID>","actorId":"<ADMIN_USER_ID>"}'
+
+  # End a role assignment (stamps validTo, keeps history)
+  curl -X DELETE "http://localhost:3000/api/user-roles?tenantId=<TENANT_ID>&id=<ASSIGNMENT_ID>&actorId=<ADMIN_USER_ID>" \
+    -b cookies.txt
+
+  # Attendance — read a day, then mark someone
+  curl "http://localhost:3000/api/attendance?tenantId=<TENANT_ID>&date=2026-07-26" -b cookies.txt
+
+  curl -X POST http://localhost:3000/api/attendance \
+    -H "Content-Type: application/json" -b cookies.txt \
+    -d '{"tenantId":"<TENANT_ID>","userId":"<USER_ID>","date":"2026-07-26",
+         "status":"PRESENT","checkIn":"09:05","actorId":"<ADMIN_USER_ID>"}'
+  # status: PRESENT | ABSENT | LATE | LEAVE | HALF_DAY
+  # Re-posting the same userId+date amends that row; it never duplicates.
+
+  curl -X DELETE "http://localhost:3000/api/attendance?tenantId=<TENANT_ID>&userId=<USER_ID>&date=2026-07-26&actorId=<ADMIN_USER_ID>" \
+    -b cookies.txt
+
+  # Log out
+  curl -X POST http://localhost:3000/api/auth/logout -b cookies.txt
+
+  PowerShell note: use backtick ` for line continuation instead of \, and
+  escape the inner quotes in -d, or just use Git Bash.
+
+
+-------------------------------------------------------------------------------
+ 8. GOOGLE SHEET TABS (13)
+-------------------------------------------------------------------------------
+ Headers live in lib/sheets/headers.json — the single source of truth, shared
+ by the TypeScript adapter and the init script so they cannot drift.
+
+  enquiries        incoming requests; status NEW / ACCEPTED / REJECTED
+  tenants          provisioned customers, keyed by slug
+  users            people; `code` is an identifier only, never a permission
+  roles            role catalogue per tenant
+  role_grants      which capabilities each ROLE confers   <- source of power
+  user_roles       which roles each USER holds            <- role assignment
+  positions        reporting lines (who reports to whom)
+  org_units        departments / branches
+  capabilities     per-person overrides (GRANT or REVOKE) layered on the role
+  attendance       one row per person per day
+  audit            every mutation, with actor and before/after
+  branding         colours and logo per tenant
+  module_features  feature toggles per tenant
+
+  How permission is decided:
+      user -> user_roles -> role -> role_grants -> capability + scope
+              then per-person `capabilities` overrides on top (REVOKE wins)
+
+  Scope order, narrowest to widest:
+      SELF < DIRECT_REPORTS < ORG_UNIT < DOWNLINE < TENANT
+
+
+-------------------------------------------------------------------------------
+ 9. TROUBLESHOOTING
+-------------------------------------------------------------------------------
+
+  403 "The caller does not have permission"
+      The sheet is not shared with the service account, OR
+      GOOGLE_SHEETS_SPREADSHEET_ID points at a different sheet than the one
+      you shared. Open the sheet you shared and copy the id from its URL:
+        https://docs.google.com/spreadsheets/d/<THIS_PART>/edit
+      403 = exists but no access.  404 = wrong id.
+
+  "No key or keyFile set."
+      google-auth-library v10 needs the object form:
+        new google.auth.JWT({ email, key, scopes })
+      Passing them positionally silently drops the key.
+
+  "Quota exceeded ... Read requests per minute"
+      Sheets allows ~60 reads/min per user. The adapter retries with backoff
+      automatically. If a run still aborts, wait a minute then:
+        npm run clean-test-data
+
+  Port 3000 already in use
+      Next falls back to 3001 and prints the real URL. To free 3000:
+        netstat -ano | findstr :3000
+        taskkill /PID <PID> /F
+
+  Enquiry submit returns "Unknown template"
+      The id is neither a catalogue id nor a seed key. See
+      lib/templates/resolve.ts for the accepted set.
+
+  Demo portal edits vanish on reload
+      Should be fixed. If it recurs, check that the templateId is resolved
+      from the params Promise before any localStorage write — writing before
+      it resolves saves to the key "demo-undefined".
+
+  type-check shows exactly 3 errors
+      Expected — all in lib/excel/excelService.ts, the legacy adapter.
+
+
+-------------------------------------------------------------------------------
+ 10. KNOWN GAPS
+-------------------------------------------------------------------------------
+
+  - /portal/<slug>/** is still on the legacy Excel adapter: no auth checks,
+    and its sidebar links omit the [tenant] segment so they 404.
+  - 11 older API routes still use lib/excel/excelService.ts, which has a
+    row-duplication bug (writeSheet never deletes old rows) and treats a
+    missing file as a fatal error.
+  - Cloudinary and Resend keys in .env are blank, so image upload and email
+    will fail until real values are added.
+  - /admin/enquiries has not been clicked through in a browser; the API chain
+    is proven by test-flow but the UI is visually unverified.
+
+
+-------------------------------------------------------------------------------
+ 11. SECRETS
+-------------------------------------------------------------------------------
+
+  .env and .env.local are gitignored (.env.example is not).
+  Never put a real password in a .md or .ps1 file — those are committable.
+
+  Check before committing:
+      git status
+      git check-ignore -v .env        (should print a .gitignore match)
+
+===============================================================================
