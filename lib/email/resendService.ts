@@ -8,7 +8,28 @@
 
 import { Resend } from 'resend';
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+/**
+ * Built on first use, not at import time.
+ *
+ * `new Resend(undefined)` throws "Missing API key", and a module-level instance runs that
+ * constructor as soon as anything imports this file — which broke the production build
+ * outright while RESEND_API_KEY was unset. Deferring it means email fails only when
+ * someone actually tries to send, with a message they can act on.
+ */
+let client: Resend | null = null;
+
+function resendClient(): Resend {
+  if (client) return client;
+  const key = process.env.RESEND_API_KEY;
+  if (!key) throw new Error('RESEND_API_KEY is not set, so email cannot be sent.');
+  client = new Resend(key);
+  return client;
+}
+
+/** Lets callers skip email gracefully rather than surfacing an error to a user. */
+export function isEmailConfigured(): boolean {
+  return !!process.env.RESEND_API_KEY;
+}
 
 const FROM_EMAIL = 'noreply@erpsystem.com';
 const SUPPORT_EMAIL = 'support@erpsystem.com';
@@ -32,7 +53,7 @@ export async function sendEmail(options: EmailOptions): Promise<{ success: boole
       return { success: false, error: 'Email needs either html or text content.' };
     }
 
-    const result = await resend.emails.send({
+    const result = await resendClient().emails.send({
       from: FROM_EMAIL,
       to: options.to,
       subject: options.subject,

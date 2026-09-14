@@ -14,7 +14,9 @@
     "test-sheets": "tsx scripts/testSheets.ts",
     "test-demo": "tsx scripts/testDemoStore.ts",
     "test-flow": "tsx scripts/testFlow.ts",
-    "clean-test-data": "tsx scripts/cleanTestData.ts"
+    "clean-test-data": "tsx scripts/cleanTestData.ts",
+    "test-portal": "tsx scripts/testPortal.ts",
+    "sheet-status": "tsx scripts/sheetStatus.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

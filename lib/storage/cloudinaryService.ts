@@ -17,7 +17,10 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-interface UploadResponse {
+// Exported because it appears in the inferred return type of the exported upload
+// functions. Without this, a production build fails with "has or is using name
+// 'UploadResponse' ... but cannot be named" — a check `tsc --noEmit` does not perform.
+export interface UploadResponse {
   url: string;
   publicId: string;
   width: number;

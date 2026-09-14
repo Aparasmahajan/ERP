@@ -609,6 +609,121 @@ Salary is read-restricted: `payroll.salary.read` is dangerous, fields encrypted 
 
 ### 8.14 Inventory & Billing (Retail / Shops) — NEW
 
+#### 8.14.0 Architecture decision — one app, split by datastore
+
+**Question raised:** should inventory management live in this ERP, or be a separate
+application? Adding it feels like it would make the system complex.
+
+**Decision: one application, one tenant/role/capability model. The split that matters is
+not app-vs-app, it is _which datastore holds which kind of data_.**
+
+##### Why the same application
+
+The permission spine is domain-agnostic:
+
+```
+tenant -> users -> user_roles -> role -> role_grants -> capability + scope
+                                        (+ per-person overrides)
+```
+
+Nothing in that chain knows what "attendance" means. Inventory permissions are simply more
+rows in the same tables. "A cashier may create bills but may not adjust stock" is one
+`role_grants` row at `LOCATION` scope — it needs no new machinery.
+
+Concrete cost of adding the module:
+
+| Change | Size |
+|---|---|
+| New capabilities in the catalogue | ~6 rows for Phase A |
+| New tabs / tables | 4–5 |
+| New portal tab, behind a feature toggle | 1 |
+| Changes to auth, roles, provisioning, tenants | **none** |
+
+It is small *because* the spine already exists. `module_features` is already per-tenant, so
+a school tenant never sees an Inventory tab — complexity is opt-in per customer, not
+global.
+
+**A separate app would be the more complex option.** It would duplicate users, auth, roles,
+tenants and branding, and then require those to be kept in sync across two systems. A shop
+needs the staff/attendance/roles half regardless, so the duplication is unavoidable in a
+split — whereas the merge adds a module to a system whose entire design is modules.
+
+##### Why billing cannot ship on the spreadsheet backend
+
+This is the genuine constraint, and it is a property of the datastore rather than of the
+feature. Measured against the live Google Sheet during development:
+
+| Observed | Consequence at a till |
+|---|---|
+| ~450–900 ms per read | A cashier scanning 20 items waits ~20 s |
+| 60 reads/minute/user quota | Exhausted by the automated test suites alone |
+| **No transactions or compare-and-set** | Two concurrent sales of the last unit both read `qty=1` and both write `0` → stock oversold |
+| `update()` is read-modify-write | Concurrent edits silently last-write-wins |
+| Online only | A till must keep taking money when the connection drops |
+| Rows grow without bound | 200 bills/day x 4 lines ≈ 800 stock movements daily |
+
+Attendance is written **once per person per day**. Billing is written **many times per
+minute, and money depends on it being right**. Identical data shape; completely different
+duty cycle. The administrative half of the product is a comfortable fit for a spreadsheet
+backend. The transactional half is not.
+
+##### Phasing
+
+**Phase A — inventory management. Runs on the current spreadsheet backend.**
+
+Read-mostly, low write volume, no concurrency hazard. Immediately useful to a shop for
+stock control, and safe to ship before any database migration.
+
+```
+products        id, tenantId, sku, barcode, name, category, unitPrice, costPrice,
+                reorderLevel, status
+stock_levels    id, tenantId, productId, locationId, quantityOnHand, lastCountedAt
+stock_adjust    id, tenantId, productId, locationId, delta, reason
+                (PURCHASE|DAMAGE|EXPIRY|CORRECTION|STOCKTAKE), note, adjustedBy, adjustedAt
+locations       id, tenantId, name, code, status        -- reuse org_units where possible
+```
+
+Capabilities for Phase A:
+
+```
+inventory.product.read      view the catalogue
+inventory.product.write     create and edit products
+inventory.stock.read        view stock levels
+inventory.stock.adjust      record a purchase, damage, expiry or correction   (sensitive)
+inventory.stocktake         run a physical count and log the variance
+inventory.report.stock      stock levels, aging, fast and slow movers
+```
+
+Scope behaves exactly as elsewhere: `SELF` < `DIRECT_REPORTS` < `ORG_UNIT` < `DOWNLINE` <
+`TENANT`, with a store manager typically holding `inventory.stock.adjust` at `ORG_UNIT` so
+they can only adjust their own branch.
+
+**Phase B — billing / point of sale. Requires a real database first.**
+
+Bills, stock movements, refunds, offline operation. **Do not build this on the spreadsheet
+backend and migrate afterwards** — the failure mode is silent overselling, discovered only
+once a real shop is trading.
+
+Phase B therefore becomes the forcing function for the migration in
+[§12 Excel → ERP migration path](#12-excel--erp-migration-path), pulled forward for the
+retail module specifically rather than scheduled generically.
+
+##### Accepted cost
+
+During Phase B the platform runs **two datastores at once** — spreadsheet for
+administrative data, database for transactional data. That is real added complexity, and it
+is honest to name it. It is also unavoidable either way: a separate application would hit
+exactly the same wall, having first duplicated the entire identity model.
+
+##### Scope discipline
+
+The 22 admin-configurable features listed later in this section are individually plausible
+and collectively a multi-year programme — barcode scanning, loyalty, dynamic pricing and
+bundle deals are each a product in their own right. Recommended first release is **four**:
+stock levels, stock adjustments, low-stock alerts, and stock-take reconciliation. Let a real
+shop determine the fifth.
+
+
 **Core Entities**
 
 ```
