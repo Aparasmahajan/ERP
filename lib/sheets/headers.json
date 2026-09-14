@@ -6,6 +6,7 @@
   "role_grants": ["id", "tenantId", "roleId", "capability", "scope", "canDelegate"],
   "user_roles": ["id", "tenantId", "userId", "roleId", "validFrom", "validTo", "isActing", "assignedBy", "assignedAt"],
   "positions": ["id", "tenantId", "userId", "reportsToUserId", "orgUnitId", "titleOverride", "validFrom", "validTo", "sessionId"],
+  "position_link": ["id", "tenantId", "userId", "linkedToUserId", "kind", "subject", "weight", "validFrom", "validTo", "createdBy", "createdAt"],
   "org_units": ["id", "tenantId", "name", "parentUnitId", "kind", "code", "headUserId", "status"],
   "capabilities": ["id", "tenantId", "userId", "capability", "mode", "scope", "grantedBy", "grantedAt", "expiresAt", "delegable"],
   "attendance": ["id", "tenantId", "userId", "date", "status", "checkIn", "checkOut", "markedBy", "markedAt", "note"],

@@ -1,7 +1,7 @@
 {
   "name": "erp-portal",
   "version": "0.0.1",
-  "description": "ERP - Multi-tenant portal (MVP with Excel backend)",
+  "description": "ERP - multi-tenant portal on Google Sheets",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -9,19 +9,18 @@
     "start": "next start",
     "lint": "eslint . --ext .ts,.tsx",
     "type-check": "tsc --noEmit",
-    "init-excel": "node scripts/initializeExcelSchema.js",
     "init-sheets": "node scripts/initSheets.mjs",
     "test-sheets": "tsx scripts/testSheets.ts",
     "test-demo": "tsx scripts/testDemoStore.ts",
     "test-flow": "tsx scripts/testFlow.ts",
     "clean-test-data": "tsx scripts/cleanTestData.ts",
     "test-portal": "tsx scripts/testPortal.ts",
-    "sheet-status": "tsx scripts/sheetStatus.ts"
+    "sheet-status": "tsx scripts/sheetStatus.ts",
+    "test-hierarchy": "tsx scripts/testHierarchy.ts"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",
     "cloudinary": "^1.40.0",
-    "exceljs": "^4.3.0",
     "googleapis": "^173.0.0",
     "jsonwebtoken": "^9.0.3",
     "next": "^15.0.0",

@@ -3,6 +3,7 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { AdminNav, PageHeading, StatusPill } from '../AdminNav';
+import Link from 'next/link';
 
 interface Enquiry {
   id: string;
@@ -244,9 +245,9 @@ export default function EnquiriesPage() {
             </p>
             <p className="mt-2 text-sm text-slate-500">
               They arrive from the template cards on the{' '}
-              <a href="/" className="underline">
+              <Link href="/" className="underline">
                 landing page
-              </a>
+              </Link>
               .
             </p>
           </div>

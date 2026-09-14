@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useMemo } from 'react';
+import Link from 'next/link';
 
 interface Template {
   id: string;
@@ -194,9 +195,9 @@ export default function TemplatesPage() {
         <div className="max-w-7xl mx-auto px-6 py-6">
           <div className="flex items-center justify-between mb-6">
             <div>
-              <a href="/" className="text-slate-600 hover:text-slate-900 text-sm font-medium">
+              <Link href="/" className="text-slate-600 hover:text-slate-900 text-sm font-medium">
                 ← Back to Home
-              </a>
+              </Link>
               <h1 className="text-4xl font-bold text-slate-900 mt-2">All Templates</h1>
               <p className="text-slate-600 mt-1">{ALL_TEMPLATES.length} solutions ready to deploy</p>
             </div>
@@ -450,7 +451,7 @@ function EnquiryModal({ template, primaryColor, onClose }: { template: Template;
           <div className="text-center py-8">
             <div className="text-5xl mb-4">✓</div>
             <h3 className="text-xl font-bold text-slate-900 mb-2">Thank You!</h3>
-            <p className="text-slate-600">We've received your enquiry. We'll be in touch soon!</p>
+            <p className="text-slate-600">We&apos;ve received your enquiry. We&apos;ll be in touch soon!</p>
           </div>
         )}
       </div>

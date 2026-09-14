@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import Link from 'next/link';
 
 const CATEGORIES = [
   { id: 'all', name: 'All Categories', icon: '🌐', color: 'bg-slate-100' },
@@ -28,18 +29,18 @@ export default function DemoPage() {
         <div className="space-y-2">
           <div className="text-xs text-slate-400 mb-4 px-4">🎯 EXPLORE TEMPLATES</div>
           <p className="text-sm text-slate-300 px-4">
-            Click "Preview Live" on any template to see a fully functional demo with sample data, roles, and features specific to that industry.
+            Click &quot;Preview Live&quot; on any template to see a fully functional demo with sample data, roles, and features specific to that industry.
           </p>
         </div>
 
         <div className="mt-8 pt-8 border-t border-slate-700">
           <p className="text-xs text-slate-400 mb-4">📢 Live Demo System</p>
-          <a
+          <Link
             href="/"
             className="block px-4 py-2 bg-slate-800 hover:bg-slate-700 rounded text-sm transition text-center"
           >
             ← Back to Home
-          </a>
+          </Link>
         </div>
       </aside>
 

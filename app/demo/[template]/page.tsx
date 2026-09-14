@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import { useDemoStore } from '@/lib/demo/useDemoStore';
+import Link from 'next/link';
 import {
   CAPABILITY_CATALOGUE,
   CAPABILITY_MODULES,
@@ -61,9 +62,9 @@ export default function TemplateDemoPage({ params }: { params: Promise<{ templat
         <div className="rounded-lg border border-red-200 bg-red-50 p-6">
           <h2 className="font-semibold text-red-900">Could not load this template</h2>
           <p className="mt-2 text-sm text-red-800">{store.error}</p>
-          <a href="/demo" className="mt-4 inline-block text-sm text-red-900 underline">
+          <Link href="/demo" className="mt-4 inline-block text-sm text-red-900 underline">
             Back to all templates
-          </a>
+          </Link>
         </div>
       </div>
     );
@@ -130,12 +131,12 @@ export default function TemplateDemoPage({ params }: { params: Promise<{ templat
           <p className="px-1 text-xs leading-relaxed text-slate-400">
             Saved in this browser only. Nothing is uploaded.
           </p>
-          <a href="/" className="block rounded bg-slate-800 px-4 py-2 text-center text-sm transition hover:bg-slate-700">
+          <Link href="/" className="block rounded bg-slate-800 px-4 py-2 text-center text-sm transition hover:bg-slate-700">
             🏠 Back to Home
-          </a>
-          <a href="/demo" className="block rounded bg-slate-800 px-4 py-2 text-center text-sm transition hover:bg-slate-700">
+          </Link>
+          <Link href="/demo" className="block rounded bg-slate-800 px-4 py-2 text-center text-sm transition hover:bg-slate-700">
             ← Back to Gallery
-          </a>
+          </Link>
         </div>
       </aside>
 

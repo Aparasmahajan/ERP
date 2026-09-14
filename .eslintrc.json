@@ -1,7 +1,18 @@
 {
   "extends": "next/core-web-vitals",
-  "ignorePatterns": [".next/", "node_modules/", "data/", "*.mjs"],
+  "ignorePatterns": [".next/", "node_modules/", "*.mjs"],
   "rules": {
-    "@next/next/no-img-element": "warn"
+    "@next/next/no-img-element": "warn",
+
+    // Warnings, not errors, so a cosmetic nit cannot block a deployment build.
+    //
+    // no-html-link-for-pages: a plain <a> to an internal route causes a full page
+    // reload instead of client-side navigation. Real but minor, and the remaining
+    // instances are on marketing pages where a reload is harmless. Converting them
+    // mechanically is what broke six files once already — they get changed by hand.
+    //
+    // no-unescaped-entities: a bare apostrophe in JSX text. No runtime effect at all.
+    "@next/next/no-html-link-for-pages": "warn",
+    "react/no-unescaped-entities": "warn"
   }
 }

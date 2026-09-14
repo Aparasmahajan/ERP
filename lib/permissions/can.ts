@@ -237,4 +237,77 @@ export async function canDelegate(
   }
 }
 
-export default { can, assertCan, canDelegate, effectiveCapabilities, capabilityIdsOf, rolesOf };
+/**
+ * Everyone `viewerId` may SEE, and why.
+ *
+ * Two sources, deliberately kept apart:
+ *   tree — descendants via positions.reportsToUserId. Carries authority, so a manager
+ *          can both see and approve for these people.
+ *   link — position_link dotted lines. Visibility ONLY. A subject lead can see the
+ *          teachers who teach their subject without acquiring the right to approve
+ *          their leave, which belongs to the line manager alone.
+ *
+ * Callers that gate an approval must use the tree set. Callers that gate a read may
+ * use both.
+ */
+export async function visibleUserIds(
+  tenantId: string,
+  viewerId: string
+): Promise<{ tree: string[]; link: string[]; all: string[] }> {
+  const [positions, links] = await Promise.all([
+    list<{ userId: string; reportsToUserId: string }>('positions', tenantId),
+    list<{ userId: string; linkedToUserId: string; validFrom: string; validTo: string }>(
+      'position_link',
+      tenantId
+    ),
+  ]);
+
+  // Walk the reporting tree downwards from the viewer.
+  const childrenOf = new Map<string, string[]>();
+  for (const p of positions) {
+    if (!p.reportsToUserId) continue;
+    const arr = childrenOf.get(p.reportsToUserId) ?? [];
+    arr.push(p.userId);
+    childrenOf.set(p.reportsToUserId, arr);
+  }
+
+  const tree: string[] = [];
+  const seen = new Set<string>([viewerId]);
+  const queue = [...(childrenOf.get(viewerId) ?? [])];
+  while (queue.length) {
+    const id = queue.shift()!;
+    if (seen.has(id)) continue; // a pre-existing cycle must not loop forever
+    seen.add(id);
+    tree.push(id);
+    queue.push(...(childrenOf.get(id) ?? []));
+  }
+
+  const now = Date.now();
+  const live = (r: { validFrom?: string; validTo?: string }) => {
+    if (r.validFrom) {
+      const f = Date.parse(r.validFrom);
+      if (Number.isFinite(f) && f > now) return false;
+    }
+    if (r.validTo) {
+      const t = Date.parse(r.validTo);
+      if (Number.isFinite(t) && t < now) return false;
+    }
+    return true;
+  };
+
+  const link = [
+    ...new Set(links.filter((l) => l.linkedToUserId === viewerId && live(l)).map((l) => l.userId)),
+  ].filter((id) => !tree.includes(id));
+
+  return { tree, link, all: [...new Set([...tree, ...link])] };
+}
+
+export default {
+  can,
+  assertCan,
+  canDelegate,
+  effectiveCapabilities,
+  capabilityIdsOf,
+  rolesOf,
+  visibleUserIds,
+};
